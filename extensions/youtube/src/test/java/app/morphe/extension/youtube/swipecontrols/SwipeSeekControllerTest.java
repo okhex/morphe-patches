@@ -1,152 +1,143 @@
 /*
  * Copyright 2026 Morphe.
- * https://github.com/MorpheApp/morphe-patches/pull/4364
+ * https://github.com/MorpheApp/morphe-patches
  *
  * See the included NOTICE file for GPLv3 Section 7 terms that apply to Morphe contributions.
  */
 
 package app.morphe.extension.youtube.swipecontrols;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.junit.Assert.*;
 
 import org.junit.Test;
-
-import java.util.ArrayList;
-import java.util.List;
-
-import app.morphe.extension.youtube.swipecontrols.controller.SeekbarScrubber;
-import app.morphe.extension.youtube.swipecontrols.controller.SwipeSeekController;
+import app.morphe.extension.youtube.swipecontrols.controller.SwipeSeekSession;
+import app.morphe.extension.youtube.swipecontrols.controller.gesture.core.SwipeDetector;
+import app.morphe.extension.youtube.swipecontrols.controller.gesture.core.SwipeDetector.SwipeDirection;
+import app.morphe.extension.youtube.swipecontrols.misc.SwipeControlsUtils;
 
 public class SwipeSeekControllerTest {
+    @Test public void formatsDurationsAndSignedFineSeekAmounts() {
+        assertEquals("00:00", SwipeControlsUtils.formatTime(-1));
+        assertEquals("01:30", SwipeControlsUtils.formatTime(90000));
+        assertEquals("02:15:30", SwipeControlsUtils.formatTime(8130000));
+        assertEquals("+5", SwipeControlsUtils.formatSeekSeconds(5000));
+        assertEquals("-15", SwipeControlsUtils.formatSeekSeconds(-15000));
+        assertEquals("+0.5", SwipeControlsUtils.formatSeekSeconds(500));
+        assertEquals("-0.5", SwipeControlsUtils.formatSeekSeconds(-500));
+    }
 
-    /**
-     * Time bar from x 0 to 1000, of a video 10 seconds long.
-     */
-    private static final class FakeScrubber implements SeekbarScrubber {
-        static final int WIDTH = 1000;
+    @Test public void matchesNextPlayerLinearSensitivityForFiveTenAndFifteenSeconds() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("video", 40000, 120000, 0);
+        session.update(100, 1f, 50);
+        assertEquals(5000, session.getOffset());
+        session.update(200, 1f, 50);
+        assertEquals(10000, session.getOffset());
+        session.update(300, 1f, 50);
+        assertEquals(15000, session.finish(false, "video") - 40000);
+    }
 
-        final int startX;
-        final List<String> moves = new ArrayList<>();
-        int completedX = -1;
-
-        FakeScrubber(int startX) {
-            this.startX = startX;
-        }
-
-        @Override
-        public int patch_startScrub() {
-            return startX;
-        }
-
-        @Override
-        public long patch_moveScrub(int x) {
-            moves.add(String.valueOf(x));
-            return Math.max(0, Math.min(WIDTH, x)) * 10L;
-        }
-
-        @Override
-        public void patch_completeScrub(int x) {
-            completedX = x;
+    @Test public void adaptsPixelMovementToEachDisplayDensity() {
+        for (float density : new float[]{0.75f, 1f, 2f, 2.75f, 3.5f}) {
+            SwipeSeekSession session = new SwipeSeekSession();
+            session.begin("video", 40000, 120000, 20);
+            session.update(20 + 100 * density, density, 50);
+            assertEquals("density=" + density, 5000, session.getOffset());
         }
     }
 
-    private static SwipeSeekController startedWith(FakeScrubber scrubber, float sensitivity) {
-        SwipeSeekController.setScrubber(scrubber);
-        SwipeSeekController seek = new SwipeSeekController();
-        assertTrue(seek.start(sensitivity));
-        // Start reads the time at the start position.
-        scrubber.moves.clear();
-        return seek;
+    @Test public void fineSeeksAreContinuousAndCanReverse() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("video", 40000, 120000, 300);
+        session.update(373, 1f, 50);
+        assertEquals(3650, session.getOffset());
+        session.update(227, 1f, 50);
+        assertEquals(-3650, session.getOffset());
+        assertEquals(36350, session.finish(false, "video"));
     }
 
-    @Test
-    public void scrubberFollowsTheSwipeAndSeeksOnRelease() {
-        FakeScrubber scrubber = new FakeScrubber(100);
-        SwipeSeekController seek = startedWith(scrubber, 1);
-        assertTrue(seek.isScrubbing());
-        assertTrue(SwipeSeekController.isSwipeSeeking());
-
-        seek.move(10.4f);
-        seek.move(10.4f);
-        seek.move(-30f);
-        seek.end(false);
-
-        assertEquals(List.of("110", "121", "91"), scrubber.moves);
-        assertEquals(91, scrubber.completedX);
-        assertFalse(seek.isScrubbing());
-        assertFalse(SwipeSeekController.isSwipeSeeking());
+    @Test public void startsAtActivationWithoutCountingTouchSlop() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("video", 40000, 120000, 240);
+        session.update(240, 3f, 50);
+        assertEquals(0, session.getOffset());
+        session.update(540, 3f, 50);
+        assertEquals(5000, session.getOffset());
     }
 
-    @Test
-    public void sensitivityScalesTheSwipe() {
-        FakeScrubber faster = new FakeScrubber(100);
-        SwipeSeekController seek = startedWith(faster, 2);
-        seek.move(50);
-        seek.end(false);
-        assertEquals(200, faster.completedX);
-
-        FakeScrubber slower = new FakeScrubber(100);
-        seek = startedWith(slower, 0.5f);
-        seek.move(50);
-        seek.end(false);
-        assertEquals(125, slower.completedX);
+    @Test public void clampsTargetAndDisplayedOffsetAtBothEnds() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("video", 5000, 120000, 0);
+        session.update(-400, 1f, 50);
+        assertEquals(0, session.getTarget());
+        assertEquals(-5000, session.getOffset());
+        session.begin("video", 115000, 120000, 0);
+        session.update(400, 1f, 50);
+        assertEquals(120000, session.getTarget());
+        assertEquals(5000, session.getOffset());
     }
 
-    @Test
-    public void slowSmallMovementsAddUp() {
-        FakeScrubber scrubber = new FakeScrubber(500);
-        SwipeSeekController seek = startedWith(scrubber, 0.5f);
-
-        for (int i = 0; i < 20; i++) {
-            seek.move(1);
-        }
-        seek.end(false);
-
-        assertEquals(510, scrubber.completedX);
+    @Test public void cancellationResetsBeforeTheNextGesture() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("video", 10000, 120000, 20);
+        session.update(120, 1f, 50);
+        assertEquals(-1, session.finish(true, "video"));
+        assertFalse(session.isActive());
+        session.begin("video", 60000, 120000, 1000);
+        session.update(1100, 1f, 50);
+        assertEquals(65000, session.finish(false, "video"));
     }
 
-    @Test
-    public void swipingBackFromPastTheEndMovesRightAway() {
-        FakeScrubber scrubber = new FakeScrubber(980);
-        SwipeSeekController seek = startedWith(scrubber, 1);
-
-        for (int i = 0; i < 10; i++) {
-            seek.move(30);
-        }
-        // The first step back moves the scrubber away from the end.
-        seek.move(-30);
-        seek.end(false);
-
-        assertTrue(scrubber.completedX < FakeScrubber.WIDTH);
-        assertTrue(scrubber.completedX >= FakeScrubber.WIDTH - 30);
+    @Test public void rejectsVideoChangesAndInvalidPlayback() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("old", 10000, 120000, 0);
+        session.update(100, 1f, 50);
+        assertEquals(-1, session.finish(false, "new"));
+        session.begin("video", -1, 120000, 0);
+        assertFalse(session.isActive());
+        session.begin("video", 0, 0, 0);
+        assertFalse(session.isActive());
+        session.begin("", 10000, 120000, 0);
+        assertFalse(session.isActive());
+        session.begin(null, 10000, 120000, 0);
+        assertFalse(session.isActive());
+        session.begin("video", 10000, 120000, Float.NaN);
+        assertFalse(session.isActive());
     }
 
-    @Test
-    public void swipingBackFromPastTheStartMovesRightAway() {
-        FakeScrubber scrubber = new FakeScrubber(20);
-        SwipeSeekController seek = startedWith(scrubber, 1);
-
-        for (int i = 0; i < 10; i++) {
-            seek.move(-30);
-        }
-        seek.move(30);
-        seek.end(false);
-
-        assertTrue(scrubber.completedX > 0);
-        assertTrue(scrubber.completedX <= 30);
+    @Test public void detectsVideoChangesDuringAnActiveGesture() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("old", 10000, 120000, 0);
+        assertTrue(session.isCurrentVideo("old"));
+        assertFalse(session.isCurrentVideo("new"));
+        assertFalse(session.isCurrentVideo(null));
+        session.finish(true, "new");
+        assertFalse(session.isCurrentVideo("old"));
     }
 
-    @Test
-    public void cancelReturnsToTheStart() {
-        FakeScrubber scrubber = new FakeScrubber(200);
-        SwipeSeekController seek = startedWith(scrubber, 1);
+    @Test public void clampsImportedSensitivityAndIgnoresInvalidGeometry() {
+        SwipeSeekSession session = new SwipeSeekSession();
+        session.begin("video", 5000, 500000, 0);
+        session.update(100, 1f, 1000);
+        assertEquals(25000, session.getTarget());
+        session.update(-100, 1f, -1);
+        assertEquals(4000, session.getTarget());
+        session.update(Float.NaN, 1f, 50);
+        session.update(100, 0, 50);
+        session.update(100, Float.NaN, 50);
+        assertEquals(4000, session.getTarget());
+    }
 
-        seek.move(50);
-        seek.end(true);
-
-        assertEquals(List.of("250"), scrubber.moves);
-        assertEquals(200, scrubber.completedX);
+    @Test public void deviceTouchSlopOnlyChangesHorizontalSeekActivation() {
+        SwipeDetector detector = new SwipeDetector(30);
+        detector.submitDisplacement(9, 0, 16);
+        assertEquals(SwipeDirection.NONE, detector.getCurrentSwipe());
+        detector.submitDisplacement(17, 0, 16);
+        assertEquals(SwipeDirection.HORIZONTAL, detector.getCurrentSwipe());
+        detector.resetSwipe();
+        detector.submitDisplacement(0, 17, 16);
+        assertEquals(SwipeDirection.NONE, detector.getCurrentSwipe());
+        detector.submitDisplacement(0, 31, 16);
+        assertEquals(SwipeDirection.VERTICAL, detector.getCurrentSwipe());
     }
 }

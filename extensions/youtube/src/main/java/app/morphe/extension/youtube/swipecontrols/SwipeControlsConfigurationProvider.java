@@ -45,19 +45,21 @@ public final class SwipeControlsConfigurationProvider {
     }
 
     /**
-     * Availability based on any zone having an action assigned.
+     * Availability when any swipe control is enabled.
      */
     public static class AnySwipeZoneAvailability implements Setting.Availability {
         @Override
         public boolean isAvailable() {
-            return Settings.SWIPE_LEFT_ZONE.get() != SwipeZoneAction.OFF
+            return Settings.SWIPE_SEEK_ENABLED.get()
+                    || Settings.SWIPE_LEFT_ZONE.get() != SwipeZoneAction.OFF
                     || Settings.SWIPE_RIGHT_ZONE.get() != SwipeZoneAction.OFF
                     || Settings.SWIPE_TOP_ZONE.get() != SwipeZoneAction.OFF;
         }
 
         @Override
         public List<Setting<?>> getParentSettings() {
-            return List.of(Settings.SWIPE_LEFT_ZONE, Settings.SWIPE_RIGHT_ZONE, Settings.SWIPE_TOP_ZONE);
+            return List.of(Settings.SWIPE_LEFT_ZONE, Settings.SWIPE_RIGHT_ZONE, Settings.SWIPE_TOP_ZONE,
+                    Settings.SWIPE_SEEK_ENABLED);
         }
     }
 
@@ -119,7 +121,7 @@ public final class SwipeControlsConfigurationProvider {
     //region swipe enable
     /**
      * Indicates whether swipe controls are enabled globally.
-     * Returns true if any swipe control is enabled and the video is in fullscreen or multi-window mode.
+     * Returns true if either volume or brightness controls are enabled and the video is in fullscreen or multi-window mode.
      */
     public boolean isSwipeControlsEnabled() {
         return (isVolumeControlEnabled() || isBrightnessControlEnabled() || isSpeedControlEnabled() || isSwipeSeekEnabled())
@@ -194,7 +196,7 @@ public final class SwipeControlsConfigurationProvider {
      * <p>
      * In this case, {@link BaseGestureController#submitTouchEvent} cancels the MotionEvent,
      * but sometimes the canceled {@link MotionEvent} triggers the tap and hold playback speed.
-     * See: <a href="https://github.com/MorpheApp/morphe-patches/issues/658">issue 658</a>.
+     * See: https://github.com/MorpheApp/morphe-patches/issues/658.
      * <p>
      * To resolve this concurrency issue, pass the {@link MotionEvent} even when the player type is
      * {@link PlayerType#WATCH_WHILE_SLIDING_MAXIMIZED_FULLSCREEN}, and finally validate the swipe gesture
@@ -321,20 +323,6 @@ public final class SwipeControlsConfigurationProvider {
     }
 
     /**
-     * Indicates whether horizontal swipes seek.
-     */
-    public boolean isSwipeSeekEnabled() {
-        return Settings.SWIPE_SEEK.get();
-    }
-
-    /**
-     * How far the seekbar moves for each pixel swiped. 1 moves it as far as the finger.
-     */
-    public float getSwipeSeekSensitivity() {
-        return SeekBarPreference.clampToRange(Settings.SWIPE_SEEK_SENSITIVITY) / 100f;
-    }
-
-    /**
      * The sensitivity of speed swipe gestures, controlling how much physical movement is needed per step.
      * Resets to default if below 1 to guard against direct SharedPreferences manipulation.
      */
@@ -353,6 +341,18 @@ public final class SwipeControlsConfigurationProvider {
      */
     public int getSpeedStepInt() {
         return Settings.SWIPE_SPEED_STEP.get().getStepInt();
+    }
+
+    /**
+     * Indicates whether screen-wide swipe seeking is enabled.
+     */
+    public boolean isSwipeSeekEnabled() {
+        return Settings.SWIPE_SEEK_ENABLED.get();
+    }
+
+    /** Next Player sensitivity in hundredths, applied to density-normalized displacement. */
+    public int getSwipeSeekSensitivity() {
+        return SeekBarPreference.clampToRange(Settings.SWIPE_SEEK_SENSITIVITY);
     }
     //endregion
 

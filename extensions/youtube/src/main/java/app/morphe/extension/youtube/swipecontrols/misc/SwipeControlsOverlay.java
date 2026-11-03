@@ -13,7 +13,6 @@ package app.morphe.extension.youtube.swipecontrols.misc;
 /**
  * Interface for all overlays for swipe controls.
  */
-@SuppressWarnings("unused")
 public interface SwipeControlsOverlay {
     /**
      * Called when the currently set volume level was changed.
@@ -37,6 +36,19 @@ public interface SwipeControlsOverlay {
      * @param speed The new playback speed multiplier.
      */
     void onSpeedChanged(float speed);
+
+    /**
+     * Called when the video seek position changes during a swipe gesture.
+     *
+     * @param targetTimeMs  The target seek time in milliseconds.
+     * @param seekOffsetMs  The seek offset relative to start position in milliseconds (can be positive or negative).
+     */
+    void onSeekChanged(long targetTimeMs, long seekOffsetMs);
+
+    /**
+     * Called when a seek gesture ends or is cancelled.
+     */
+    void onSeekEnded();
 
     /**
      * Called when a new swipe session has started.
