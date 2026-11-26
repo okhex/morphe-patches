@@ -1,0 +1,24 @@
+name: Add block channel feature
+on: workflow_dispatch
+permissions:
+  contents: write
+jobs:
+  pick:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Cherry-pick
+        run: |
+          git config user.name "builder"
+          git config user.email "builder@users.noreply.github.com"
+          git fetch https://github.com/MorpheApp/morphe-patches.git pull/4487/head
+          git checkout -b block-channel
+          for c in $(git rev-list -n 5 --reverse FETCH_HEAD); do
+            a=$(git log -1 --format=%an $c)
+            echo "$c $a"
+            if [ "$a" != "semantic-release-bot" ]; then git cherry-pick $c; fi
+          done
+          git push origin block-channel
